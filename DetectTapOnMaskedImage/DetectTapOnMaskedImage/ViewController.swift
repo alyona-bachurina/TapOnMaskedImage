@@ -9,108 +9,169 @@
 import UIKit
 
 
-struct ImageDescriptor {
-	let title: String		// title of quiz step
-	let original: String	// name of quiz image
-	let mask: String		// name of mask image
-	let numerOfDangers: Int // number of masked areas in the image
-}
-
 class ViewController: UIViewController {
 
+	@IBOutlet weak var answerButton: UIButton!
+	@IBOutlet weak var explainButton: UIButton!
 	@IBOutlet weak var nextButton: UIButton!
+
+	// this image view keeps image of question, or answer, or explanation depending on the current step state
 	@IBOutlet weak var imageView: UIImageView!
-	@IBOutlet weak var maskImage: UIImageView!
-	@IBOutlet weak var resultLabel: UILabel!
-	@IBOutlet weak var hitReactionLabel: UILabel!
 
-	// colors, which we use on mask images to mark dangerous areas
-	let dangerousMaskColors:[UIColor] = [ UIColor.red, UIColor.green, UIColor.blue ]
+	// this image view keeps mask for the original image of question
+	@IBOutlet weak var maskImageView: UIImageView!
 
-	// Data to present
-	// ORIGINAL and MASK images MUST be same sized and have same frames
-	let images:[ImageDescriptor] = [
-		ImageDescriptor(title: "Nature", original:"img1", mask:"img1_mask", numerOfDangers: 2),
-		ImageDescriptor(title: "Hazards", original:"img2", mask:"img2_mask", numerOfDangers: 2),
-		ImageDescriptor(title: "Mixed", original:"img3", mask:"img3_mask", numerOfDangers: 3),
-		ImageDescriptor(title: "Fire", original:"img4", mask:"img4_mask", numerOfDangers: 1),
-	]
+	// this label presents text of question or answer
+	@IBOutlet weak var quizTextLabel: UILabel!
 
-	// index of current presented image, intially is -1
-	var currentImageIndex: Int = -1{
-		didSet{
-			updateStateForCurrentImageIndex()
+	// this label present message "Found N dangers out of M"
+	@IBOutlet weak var dangersFound: UILabel!
+
+	// this label presents caption i.e. "question" or "answer"
+	@IBOutlet weak var stateLabel: UILabel!
+
+	// this variable keeps the data for UI
+	var state: QuizFlowState = QuizFlowState() {
+		didSet {
+			renderState(state)
 		}
 	}
-	// set of mask colors, which user already tapped on current image
-	var foundColorsForCurrentImage = Set<UIColor>()
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
-
-		// load first image
-		self.goToNextImage()
+		renderState(state)
 	}
 
-	@IBAction func didTapOnImage(_ sender: UITapGestureRecognizer) {
-		let point = sender.location(in: imageView)
-		let selectedColor = self.maskImage.colorOfPoint(point: point)
 
-		let currentImage = images[currentImageIndex]
+	func renderState(_ state: QuizFlowState){
 
-		if dangerousMaskColors.contains(selectedColor) // user tapped on dangerous area
-		{
-			// save mask color of danger which user has found
-			foundColorsForCurrentImage.insert(selectedColor)
+		let stepData = state.currentStepData
 
-			// update label with results of quiz for current image
-			resultLabel.text = String(format: "%@: %d dangers found",
-									  currentImage.title,
-									  foundColorsForCurrentImage.count)
-			indicateSuccess(true)
-		}else{ // user tapped on safe area
+		switch(state.stepState){
 
-			indicateSuccess(false)
+			case .question:
+				self.answerButton.isHidden = !state.canGoForward
+				self.explainButton.isHidden = true
+				self.nextButton.isHidden = true
+
+				self.stateLabel.text = "Question"
+
+				if let maskImageName = stepData.question.image.mask?.mask {
+					self.maskImageView.image = UIImage(named: maskImageName)
+				}
+
+				self.imageView.image = UIImage(named: stepData.question.image.original)
+				self.quizTextLabel.text = stepData.question.text
+				self.dangersFound.text = state.dangersFoundLabel
+			break
+
+			case .answer:
+				self.answerButton.isHidden = true
+				self.explainButton.isHidden = false
+				self.nextButton.isHidden = true
+
+				self.stateLabel.text = "Answer"
+				self.imageView.image = UIImage(named: stepData.answer.image.original)
+				self.quizTextLabel.text = stepData.answer.text
+				self.dangersFound.text = nil
+			break
+
+			case .explanation:
+				self.answerButton.isHidden = true
+				self.explainButton.isHidden = true
+				self.nextButton.isHidden = false
+
+				self.stateLabel.text = nil
+				self.dangersFound.text = nil
+				self.imageView.image = UIImage(named: stepData.explanation.image.original)
+				self.quizTextLabel.text = stepData.explanation.text
+
+			break
 		}
+	}
 
-		// enable NEXT button when user selected all dnagers for current image
-		self.nextButton.isEnabled = foundColorsForCurrentImage.count == currentImage.numerOfDangers
+
+	@IBAction func didTapOnImage(_ sender: UITapGestureRecognizer) {
+
+		let point = sender.location(in: imageView)
+		let selectedColor = self.maskImageView.colorOfPoint(point: point)
+
+		var newState = self.state
+
+		newState.registerSelectedColor(selectedColor)
+
+		self.state = newState
+
+//		let currentImage = images[currentImageIndex]
+//
+//		if dangerousMaskColors.contains(selectedColor) // user tapped on dangerous area
+//		{
+//			// save mask color of danger which user has found
+//			foundColorsForCurrentImage.insert(selectedColor)
+//
+//			// update label with results of quiz for current image
+//			resultLabel.text = String(format: "%@: %d dangers found",
+//									  currentImage.title,
+//									  foundColorsForCurrentImage.count)
+//			indicateSuccess(true)
+//		}else{ // user tapped on safe area
+//
+//			indicateSuccess(false)
+//		}
+//
+//		// enable NEXT button when user selected all dnagers for current image
+//		self.nextButton.isEnabled = foundColorsForCurrentImage.count == currentImage.numerOfDangers
 	}
 
 	@IBAction func onNextButtonTapped(_ sender: Any) {
-		goToNextImage()
+		var newState = self.state
+		newState.switchToNextStep()
+		self.state = newState
 	}
 
-	fileprivate func indicateSuccess(_ success: Bool) {
-		//indicate success/fail of current attepmt
-		if success {
-			self.hitReactionLabel.text = "Correct!"
-			self.hitReactionLabel.textColor = .systemGreen
-		}else{
-			self.hitReactionLabel.text = "Nope..."
-			self.hitReactionLabel.textColor = .systemRed
-		}
-	}
-
-	fileprivate func updateStateForCurrentImageIndex(){
-		let currentImage = images[currentImageIndex]
-		imageView.image = UIImage.init(named: currentImage.original)
-		maskImage.image = UIImage.init(named: currentImage.mask)
+	@IBAction func onExplainButtonTapped(_ sender: Any) {
+		var newState = self.state
+		newState.switchToExplanationState()
+		self.state = newState
 	}
 
 
-	fileprivate func goToNextImage(){
-		foundColorsForCurrentImage.removeAll()
-		resultLabel.text = "Find all dangers here!"
-		self.hitReactionLabel.text = nil
-		self.nextButton.isEnabled = false
-
-		if currentImageIndex >= images.count - 1 {
-			currentImageIndex = 0
-		}else{
-			currentImageIndex = currentImageIndex + 1
-		}
+	@IBAction func onAnswerButtonTapped(_ sender: Any) {
+		var newState = self.state
+		newState.switchToAnswerState()
+		self.state = newState
 	}
+
+//	fileprivate func indicateSuccess(_ success: Bool) {
+//		//indicate success/fail of current attepmt
+//		if success {
+//			self.hitReactionLabel.text = "Correct!"
+//			self.hitReactionLabel.textColor = .systemGreen
+//		}else{
+//			self.hitReactionLabel.text = "Nope..."
+//			self.hitReactionLabel.textColor = .systemRed
+//		}
+//	}
+
+//	fileprivate func updateStateForCurrentImageIndex(){
+//		let currentImage = images[currentImageIndex]
+//		imageView.image = UIImage.init(named: currentImage.original)
+//		maskImage.image = UIImage.init(named: currentImage.mask)
+//	}
+
+
+//	fileprivate func goToNextImage(){
+//		foundColorsForCurrentImage.removeAll()
+//		resultLabel.text = "Find all dangers here!"
+//		self.hitReactionLabel.text = nil
+//		self.nextButton.isEnabled = false
+//
+//		if currentImageIndex >= images.count - 1 {
+//			currentImageIndex = 0
+//		}else{
+//			currentImageIndex = currentImageIndex + 1
+//		}
+//	}
 	
 }
 
@@ -137,3 +198,4 @@ extension UIView {
 		return color
 	}
 }
+
