@@ -17,7 +17,7 @@ import UIKit
 //- Explanation: picture, button(go to next question)
 
 
-// This represents single step if the quiz.
+// This represents single step of the quiz.
 struct QuizStep {
 	let question: StepItem
 	let answer: StepItem
